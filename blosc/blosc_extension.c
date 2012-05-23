@@ -61,7 +61,8 @@ PyDoc_STRVAR(compress__doc__,
 static PyObject *
 PyBlosc_compress(PyObject *self, PyObject *args)
 {
-    PyObject *result_str = NULL;
+    ///PyObject *result_str = NULL;
+    PyObject *new;
     void *input, *output;
     int clevel, shuffle, cbytes;
     int nbytes, typesize;
@@ -72,18 +73,23 @@ PyBlosc_compress(PyObject *self, PyObject *args)
       return NULL;
 
     /* Alloc memory for compression */
-    output = malloc(nbytes+BLOSC_MAX_OVERHEAD);
-    if (output == NULL) {
-      PyErr_SetString(PyExc_MemoryError,
-                      "Can't allocate memory to compress data");
-      return NULL;
-    }
+    //output = malloc(nbytes+BLOSC_MAX_OVERHEAD);
+    //
+    new = PyByteArray_FromStringAndSize("", 0);
+    PyByteArray_Resize((PyObject *)new, nbytes+BLOSC_MAX_OVERHEAD);
+    //if (output == NULL) {
+    //  PyErr_SetString(PyExc_MemoryError,
+    //                  "Can't allocate memory to compress data");
+    //  return NULL;
+    //}
 
     /* Compress */
     Py_BEGIN_ALLOW_THREADS;
     cbytes = blosc_compress(clevel, shuffle, (size_t)typesize, (size_t)nbytes,
-                            input, output, nbytes+BLOSC_MAX_OVERHEAD);
+                            input, ((PyByteArrayObject *)new)->ob_bytes, nbytes+BLOSC_MAX_OVERHEAD);
     Py_END_ALLOW_THREADS;
+    //((PyByteArrayObject *)new)->ob_bytes[cbytes+1] = '\0'; /* Trailing null byte */
+    PyByteArray_Resize((PyObject *)new, cbytes);
 
     if (cbytes < 0) {
       blosc_error(cbytes, "while compressing data");
@@ -92,12 +98,13 @@ PyBlosc_compress(PyObject *self, PyObject *args)
     }
 
     /* This forces a copy of the output, but anyway */
-    result_str = PyBytes_FromStringAndSize((char *)output, cbytes);
+    //result_str = PyBytes_FromStringAndSize((char *)output, cbytes);
 
     /* Free the initial buffer */
-    free(output);
+    //free(output);
 
-    return result_str;
+    //return result_str;
+    return (PyObject *)new;
 }
 
 PyDoc_STRVAR(decompress__doc__,
