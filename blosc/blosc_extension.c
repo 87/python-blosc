@@ -13,6 +13,24 @@
 #include "Python.h"
 #include "blosc.h"
 
+#define RESIZE_TOLERATION 0.75
+
+/*  Shamelessly copied from python-snappy */
+static inline PyObject *
+maybe_resize(PyObject *str, size_t expected_size, size_t actual_size)
+{
+    // Tolerate up to 25% slop, to reduce the likelihood of
+    // reallocation and copying.
+    if (actual_size != expected_size) {
+        if (actual_size < expected_size * RESIZE_TOLERATION) {
+            _PyBytes_Resize(&str, actual_size);
+            return str;
+        }
+        Py_SIZE(str) = actual_size;
+    }
+    return str;
+}
+
 
 static PyObject *BloscError;
 
@@ -61,8 +79,8 @@ PyDoc_STRVAR(compress__doc__,
 static PyObject *
 PyBlosc_compress(PyObject *self, PyObject *args)
 {
-    PyObject *result_str = NULL;
-    void *input, *output;
+    PyObject *output = NULL;
+    void *input;
     int clevel, shuffle, cbytes;
     int nbytes, typesize;
 
@@ -72,7 +90,7 @@ PyBlosc_compress(PyObject *self, PyObject *args)
       return NULL;
 
     /* Alloc memory for compression */
-    output = malloc(nbytes+BLOSC_MAX_OVERHEAD);
+    output = PyBytes_FromStringAndSize(NULL, nbytes+BLOSC_MAX_OVERHEAD);
     if (output == NULL) {
       PyErr_SetString(PyExc_MemoryError,
                       "Can't allocate memory to compress data");
@@ -82,22 +100,14 @@ PyBlosc_compress(PyObject *self, PyObject *args)
     /* Compress */
     Py_BEGIN_ALLOW_THREADS;
     cbytes = blosc_compress(clevel, shuffle, (size_t)typesize, (size_t)nbytes,
-                            input, output, nbytes+BLOSC_MAX_OVERHEAD);
+                            input, PyBytes_AS_STRING(output), nbytes+BLOSC_MAX_OVERHEAD);
     Py_END_ALLOW_THREADS;
 
     if (cbytes < 0) {
       blosc_error(cbytes, "while compressing data");
-      free(output);
       return NULL;
     }
-
-    /* This forces a copy of the output, but anyway */
-    result_str = PyBytes_FromStringAndSize((char *)output, cbytes);
-
-    /* Free the initial buffer */
-    free(output);
-
-    return result_str;
+    return maybe_resize(output, nbytes, cbytes);
 }
 
 PyDoc_STRVAR(decompress__doc__,
